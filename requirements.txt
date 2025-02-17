@@ -1,0 +1,15 @@
+cassio
+datasets
+langchain
+langchain_community
+pypdf
+sentence-transformers
+google-generativeai
+tiktoken
+PyPDF2
+streamlit
+python-dotenv
+typing-extensions
+langchain-google-genai
+streamlit
+faiss-cpu
