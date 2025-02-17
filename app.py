@@ -159,7 +159,7 @@ def typing_animation(text, speed):
 
 if "intro_displayed" not in st.session_state:
     st.session_state.intro_displayed = True
-    st.write_stream(typing_animation("Hello, I am Docs, your Call Transcript Assistant!", 0.02))
+    st.write_stream(typing_animation("Hello, I am Forms, your Call Transcript Assistant!", 0.02))
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
