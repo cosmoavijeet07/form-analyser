@@ -9,7 +9,7 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 import os
 import time
-import json
+import re
 from langchain.llms.base import LLM
 from typing import Any, List, Optional, Dict
 from pydantic import Field, BaseModel
@@ -42,15 +42,16 @@ class GeminiLLM(LLM, BaseModel):
     def _call(self, transcript: str, stop: Optional[List[str]] = None) -> str:
         system_prompt = """
         You are an AI assistant designed to extract structured information from call transcripts. 
-        Analyze the transcript and return a JSON object with the following fields:
-        - "name": (Full name of the customer, or "Unknown" if not mentioned)
-        - "age": (Age of the customer, or "Unknown" if not mentioned)
-        - "sentiment": (Overall sentiment of the customer - "Positive", "Negative", or "Neutral")
-        - "issue_summary": (Brief summary of the customer's issue)
-        - "call_duration": (Approximate duration of the call in minutes, if available)
-        - "agent_name": (The name of the support agent, if mentioned)
-        
-        Ensure the response is strictly formatted as JSON with **no extra text**.
+        Analyze the transcript and return the following details in a **readable text format**:
+
+        - Customer Name: (Full name of the customer, or "Unknown" if not mentioned)
+        - Customer Age: (Age of the customer, or "Unknown" if not mentioned)
+        - Sentiment: (Overall sentiment of the customer - "Positive", "Negative", or "Neutral")
+        - Issue Summary: (Brief summary of the customer's issue)
+        - Call Duration: (Approximate duration of the call in minutes, if available)
+        - Agent Name: (The name of the support agent, if mentioned)
+
+        Ensure the response is formatted as **plain text** (no JSON).
         """
 
         full_prompt = f"{system_prompt}\n\nCall Transcript:\n{transcript}\n\nExtracted Info:"
@@ -77,18 +78,32 @@ def extract_text(uploaded_file):
         return None
     return text
 
-# Function to extract details using Gemini AI
-def extract_details_with_gemini(text):
-    gemini_llm = GeminiLLM(model_name='gemini-1.5-flash')
-    response = gemini_llm._call(text)
-    
-    # Extract structured data from Gemini response
-    try:
-        extracted_info = json.loads(response)  # Convert JSON string to dictionary
-        return extracted_info
-    except json.JSONDecodeError:
-        st.error("Error in extracting details using Gemini AI. Please try again.")
-        return {}
+# Function to extract structured details using regex
+def extract_details_with_regex(response_text):
+    extracted_info = {
+        "name": "Unknown",
+        "age": "Unknown",
+        "sentiment": "Unknown",
+        "issue_summary": "Unknown",
+        "call_duration": "Unknown",
+        "agent_name": "Unknown"
+    }
+
+    patterns = {
+        "name": r"Customer Name:\s*(.*)",
+        "age": r"Customer Age:\s*(\d+)",
+        "sentiment": r"Sentiment:\s*(Positive|Negative|Neutral)",
+        "issue_summary": r"Issue Summary:\s*(.*)",
+        "call_duration": r"Call Duration:\s*(\d+)\s*minutes?",
+        "agent_name": r"Agent Name:\s*(.*)"
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, response_text, re.IGNORECASE)
+        if match:
+            extracted_info[key] = match.group(1).strip()
+
+    return extracted_info
 
 # Function to process uploaded transcript
 def process_uploaded_transcript(uploaded_file):
@@ -96,8 +111,11 @@ def process_uploaded_transcript(uploaded_file):
     if not text:
         return
 
-    extracted_info = extract_details_with_gemini(text)
+    gemini_llm = GeminiLLM(model_name='gemini-1.5-flash')
+    response_text = gemini_llm._call(text)
     
+    extracted_info = extract_details_with_regex(response_text)
+
     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
     embedding_function = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
