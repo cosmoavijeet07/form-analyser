@@ -19,7 +19,7 @@ load_dotenv(Path(".env"))
 
 # Configure Streamlit UI
 st.set_page_config(page_title="Call Transcript Analyzer", layout="wide")
-st.title("Call Transcript Analyzer Bot")
+st.title("Call Transcript Analyzer & Q&A Bot")
 
 if "pdf_processed" not in st.session_state:
     st.session_state.pdf_processed = False
@@ -165,103 +165,6 @@ if prompt:
 
     if st.session_state.faiss_vector_index:
         answer = st.session_state.faiss_vector_index.query(query_text, llm=gemini_llm).strip()
-        with st.chat_message("assistant"):
-            st.write_stream(typing_animation(answer, 0.02))
-        st.session_state.messages.append({"role": "assistant", "content": answer})# Custom Gemini LLM class
-class GeminiLLM(LLM, BaseModel):
-    model_name: str = Field(default="gemini-1.5-flash", description="Gemini Model Name")
-    model: Optional[Any] = Field(None, description="Gemini Model Instance")
-
-    def __init__(self, model_name: str, **data):
-        super().__init__(model_name=model_name, **data)
-        self.model = genai.GenerativeModel(model_name=self.model_name)
-
-    def _call(self, transcript: str, stop: Optional[List[str]] = None) -> str:
-        system_prompt = """
-        You are an AI assistant designed to extract structured information from call transcripts. 
-        Analyze the transcript and return a JSON object with the following fields:
-        - "name": (Full name of the customer, or "Unknown" if not mentioned)
-        - "age": (Age of the customer, or "Unknown" if not mentioned)
-        - "sentiment": (Overall sentiment of the customer - "Positive", "Negative", or "Neutral")
-        - "issue_summary": (Brief summary of the customer's issue)
-        - "call_duration": (Approximate duration of the call in minutes, if available)
-        - "agent_name": (The name of the support agent, if mentioned)
-        
-        Ensure the response is strictly formatted as JSON with **no extra text**.
-        """
-
-        full_prompt = f"{system_prompt}\n\nCall Transcript:\n{transcript}\n\nExtracted Info:"
-        response = self.model.generate_content(full_prompt)
-        return response.text
-
-    @property
-    def _llm_type(self) -> str:
-        return "gemini"
-
-    @property
-    def _identifying_params(self) -> Dict[str, Any]:
-        return {"model_name": self.model_name}
-
-    def _query(self, query_text: str) -> str:
-        system_prompt = """
-        You are an AI assistant designed to answer questions about call transcripts. 
-        Analyze the query and return a response.
-        """
-
-        full_prompt = f"{system_prompt}\n\nQuery:\n{query_text}\n\nResponse:"
-        response = self.model.generate_content(full_prompt)
-        return response.text
-
-# Function to extract details using Gemini AI
-def extract_details_with_gemini(text):
-    gemini_llm = GeminiLLM(model_name='gemini-1.5-flash')
-    response = gemini_llm._call(text)
-    
-    # Extract structured data from Gemini response
-    try:
-        extracted_info = json.loads(response)  # Convert JSON string to dictionary
-        return extracted_info
-    except json.JSONDecodeError:
-        st.error("Error in extracting details using Gemini AI. Please try again.")
-        return {}
-
-# Function to process uploaded transcript
-def process_uploaded_transcript(uploaded_file):
-    text = extract_text(uploaded_file)
-    if not text:
-        return
-
-    extracted_info = extract_details_with_gemini(text)
-    
-    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-
-    embedding_function = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
-    faiss_vector_store = FAISS.from_texts([text], embedding_function)
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=200)
-    texts = text_splitter.split_text(text)
-    faiss_vector_store.add_texts(texts[:50])
-
-    st.session_state.faiss_vector_index = VectorStoreIndexWrapper(vectorstore=faiss_vector_store)
-    st.session_state.pdf_processed = True
-    st.session_state.extracted_info = extracted_info
-
-    st.success("Transcript processed successfully!")
-
-# Chatbot interaction
-prompt = st.chat_input("Ask about the transcript..")
-
-if prompt:
-    with st.chat_message('user'):
-        st.markdown(prompt)
-
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    query_text = prompt.strip()
-    gemini_llm = GeminiLLM(model_name='gemini-1.5-flash')
-
-    if st.session_state.faiss_vector_index:
-        answer = gemini_llm._query(query_text)
         with st.chat_message("assistant"):
             st.write_stream(typing_animation(answer, 0.02))
         st.session_state.messages.append({"role": "assistant", "content": answer})
